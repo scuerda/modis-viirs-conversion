@@ -1,0 +1,36 @@
+version: '2'
+
+services:
+
+  base:
+    image: modisviirs:latest
+    entrypoint: /bin/bash
+    env_file: .env
+    volumes:
+      - '.:/home/geolambda/work'
+
+  test:
+    image: modisviirs:latest
+    entrypoint: bash -c 'nosetests -v -s;'
+    env_file: .env
+    volumes:
+      - './lambda:/home/geolambda/lambda'
+      - './test:/home/geolambda/test'
+
+  package:
+    image: modisviirs:latest
+    command: lambda-package.sh
+    working_dir: /home/geolambda/work
+    volumes:
+      - '.:/home/geolambda/work'
+
+  testpackage:
+    image: modisviirs:latest
+    command: bash -c "nosetests -v -s";
+    working_dir: /home/geolambda
+    env_file: .env
+    environment:
+      - LD_LIBRARY_PATH=/home/geolambda/lambda/lib
+    volumes:
+      - './test:/home/geolambda/test'
+      - './lambda:/home/geolambda/lambda'

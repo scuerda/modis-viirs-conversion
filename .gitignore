@@ -1,0 +1,8 @@
+.env
+.python-version
+*.pyc
+lambda-deploy.zip
+venv/
+*.zip
+.DS_Store
+/lambda/lib/*.*
