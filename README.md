@@ -1,0 +1,1 @@
+## AWS GeoLambda Task for Converting MODIS and VIIRS shapefiles to GeoJSON
