@@ -17,6 +17,37 @@ sys.path.insert(0, os.path.join(path, 'lib/python2.7/site-packages'))
 from osgeo import ogr
 
 s3_client = boto3.client('s3')
+bucket = 'active-fire-data'
+
+
+def upload_and_convert(url, name_prefix, timestamp):
+    tmp_name = '/tmp/{}.zip'.format(name_prefix)
+    urlretrieve(url, tmp_name)
+    shape_file_name = [f for f in zipfile.ZipFile(tmp_name).namelist() if f.split('.')[1] == 'shp'][0]
+
+    shape_file = '/vsizip//{}/{}'.format(tmp_name, shape_file_name) 
+
+    drv = ogr.GetDriverByName('ESRI Shapefile')
+    data = drv.Open(shape_file, 0)
+    l = data.GetLayer()
+
+    features = [json.loads(f.ExportToJson()) for f in l]
+
+    geojson_collection = {
+        "type": "FeatureCollection",
+        "features": features,
+    }
+
+    upload_path = '/tmp/{}_latest.geojson'.format(name_prefix)
+    with open(upload_path, 'w') as f:
+        f.write(json.dumps(geojson_collection))
+
+    try:
+        s3_client.upload_file(upload_path, bucket, '{}_latest.geojson'.format(name_prefix))
+        s3_client.upload_file(upload_path, bucket, '{}_{}.geojson'.format(name_prefix, timestamp))
+    except Exception:
+        return False
+    return True
 
 def handler(event, context):
     """ Lambda handler """
@@ -29,55 +60,12 @@ def handler(event, context):
         year=today.year,
         hour=today.hour)
 
-    bucket = 'active-fire-data'
-    modis_url = 'https://firms.modaps.eosdis.nasa.gov/active_fire/c6/shapes/zips/MODIS_C6_USA_contiguous_and_Hawaii_7d.zip'
+    usgs_url = 'https://rmgsc.cr.usgs.gov/outgoing/GeoMAC/current_year_fire_data/current_year_all_states/active_perimeters_dd83.zip'
     viirs_url = 'https://firms.modaps.eosdis.nasa.gov/active_fire/viirs/shapes/zips/VNP14IMGTDL_NRT_USA_contiguous_and_Hawaii_7d.zip'
-
-    # Get and convert modis
-
-    urlretrieve(viirs_url, '/tmp/modis.zip')
-
-    shape_file_name = [f for f in zipfile.ZipFile('/tmp/modis.zip').namelist() if f.split('.')[1] == 'shp'][0]
-
-    vi_file = '/vsizip//tmp/modis.zip/{}'.format(shape_file_name)
-    drv = ogr.GetDriverByName('ESRI Shapefile')
-    modis_data = drv.Open(vi_file, 0)
-    l = modis_data.GetLayer()
-
-    features = [json.loads(f.ExportToJson()) for f in l]
-
-    modis = {
-        "type": "FeatureCollection",
-        "features": features,
-    }
-
-    upload_path = '/tmp/modis.geojson'
-
-    with open(upload_path, "w") as f:
-    	f.write(json.dumps(features))
-
-    s3_client.upload_file(upload_path, bucket, 'modis_latest.geojson')
-    s3_client.upload_file(upload_path, bucket, 'modis_{ts}.geojson'.format(ts=ts))
+    modis_url = 'https://firms.modaps.eosdis.nasa.gov/active_fire/c6/shapes/zips/MODIS_C6_USA_contiguous_and_Hawaii_7d.zip'
     
-    # # Get and convert viirs
-    urlretrieve(viirs_url, '/tmp/viirs.zip')
-    shape_file_name = [f for f in zipfile.ZipFile('/tmp/viirs.zip').namelist() if f.split('.')[1] == 'shp'][0]
-    vi_file = '/vsizip//tmp/viirs.zip/{}'.format(shape_file_name)
-    drv = ogr.GetDriverByName('ESRI Shapefile')
-    data = drv.Open(vi_file, 0)
-    l = data.GetLayer()
-
-    features = [json.loads(f.ExportToJson()) for f in l]
-
-    viirs = {
-        "type": "FeatureCollection",
-        "features": features,
-    }
-
-    upload_path = '/tmp/viirs_latest.geojson'
-    with open(upload_path, "w") as f:
-        f.write(json.dumps(features))
-
-    s3_client.upload_file(upload_path, bucket, 'viirs_latest.geojson')
-    s3_client.upload_file(upload_path, bucket, 'viirs_{ts}.geojson'.format(ts=ts))
-    return { "modis_converted": True, "viirs_converted": True }
+    usgs_result = upload_and_convert(usgs_url, 'usgs', ts)
+    viirs_result = upload_and_convert(viirs_url, 'viirs', ts)
+    modis_result = upload_and_convert(modis_url, 'modis', ts)
+    
+    return { "modis_converted": modis_result, "viirs_converted": viirs_result, "usgs_converted": usgs_result }
